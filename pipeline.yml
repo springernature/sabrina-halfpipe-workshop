@@ -1,0 +1,125 @@
+# Generated using halfpipe cli version 3.0.0
+groups: []
+resources:
+- name: git
+  type: git
+  source:
+    branch: master
+    private_key: ((github.private_key))
+    uri: git@github.com:springernature/sabrina-halfpipe-workshop.git
+- name: CF api.snpaas.eu workshop dev
+  type: cf-resource
+  source:
+    api: api.snpaas.eu
+    org: workshop
+    password: ((cloudfoundry.password))
+    space: dev
+    username: ((cloudfoundry.username))
+resource_types:
+- name: cf-resource
+  type: registry-image
+  source:
+    password: ((gcr.private_key))
+    repository: eu.gcr.io/halfpipe-io/cf-resource
+    tag: stable
+    username: _json_key
+jobs:
+- name: run build.sh
+  serial: true
+  plan:
+  - aggregate:
+    - get: git
+      trigger: true
+    timeout: 1h
+  - task: run build.sh
+    config:
+      platform: linux
+      image_resource:
+        type: registry-image
+        source:
+          repository: node
+          tag: 10.15-stretch
+      params:
+        ARTIFACTORY_PASSWORD: ((artifactory.password))
+        ARTIFACTORY_URL: ((artifactory.url))
+        ARTIFACTORY_USERNAME: ((artifactory.username))
+      run:
+        path: /bin/sh
+        args:
+        - -c
+        - |
+          which bash > /dev/null
+          if [ $? != 0 ]; then
+            echo "WARNING: Bash is not present in the docker image"
+            echo "If your script depends on bash you will get a strange error message like:"
+            echo "  sh: yourscript.sh: command not found"
+            echo "To fix, make sure your docker image contains bash!"
+            echo ""
+            echo ""
+          fi
+
+          if [ -e /etc/alpine-release ]
+          then
+            echo "WARNING: you are running your build in a Alpine image or one that is based on the Alpine"
+            echo "There is a known issue where DNS resolving does not work as expected"
+            echo "https://github.com/gliderlabs/docker-alpine/issues/255"
+            echo "If you see any errors related to resolving hostnames the best course of action is to switch to another image"
+            echo "we recommend debian:stretch-slim as an alternative"
+            echo ""
+            echo ""
+          fi
+
+          export GIT_REVISION=`cat .git/ref`
+
+          ./build.sh
+          EXIT_STATUS=$?
+          if [ $EXIT_STATUS != 0 ] ; then
+            exit 1
+          fi
+        dir: git
+      inputs:
+      - name: git
+      caches:
+      - path: ../../../var/halfpipe/cache
+      - path: ../../../halfpipe-cache
+    timeout: 1h
+    attempts: 1
+- name: deploy-cf
+  serial: true
+  plan:
+  - aggregate:
+    - get: git
+      passed:
+      - run build.sh
+      trigger: true
+    timeout: 1h
+  - put: cf halfpipe-push
+    resource: CF api.snpaas.eu workshop dev
+    params:
+      appPath: git
+      command: halfpipe-push
+      gitRefPath: git/.git/ref
+      manifestPath: git/manifest.yml
+      testDomain: springernature.app
+      timeout: 1h
+    timeout: 1h
+    attempts: 2
+  - put: cf halfpipe-promote
+    resource: CF api.snpaas.eu workshop dev
+    params:
+      command: halfpipe-promote
+      manifestPath: git/manifest.yml
+      testDomain: springernature.app
+      timeout: 1h
+    timeout: 1h
+    attempts: 2
+  ensure:
+    put: cf halfpipe-cleanup
+    resource: CF api.snpaas.eu workshop dev
+    params:
+      command: halfpipe-cleanup
+      manifestPath: git/manifest.yml
+      timeout: 1h
+    timeout: 1h
+    attempts: 2
+

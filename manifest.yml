@@ -2,6 +2,6 @@
 applications:
 - name: my-halfpipe-workshop-app
   routes:
-    - route: https://my-halfpipe-workshop-app.springernature.app
+    - route: my-halfpipe-workshop-app.springernature.app
   buildpacks: 
     - https://github.com/cloudfoundry/nodejs-buildpack
