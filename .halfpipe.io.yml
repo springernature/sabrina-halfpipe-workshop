@@ -1,0 +1,11 @@
+team: workshop
+pipeline: my-halfpipe-workshop-app
+tasks:
+- type: run
+  script: build.sh
+  docker:
+    image: node:10.15-stretch
+- type: deploy-cf
+  api: api.snpaas.eu
+  test_domain: springernature.app
+  space: dev
